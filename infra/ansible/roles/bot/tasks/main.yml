@@ -1,0 +1,191 @@
+---
+# Bot server setup - rarb arbitrage bot
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install system dependencies
+  apt:
+    name:
+      - python3
+      - python3-pip
+      - python3-venv
+      - git
+      - build-essential
+      - libffi-dev
+      - libssl-dev
+    state: present
+
+- name: Create rarb user
+  user:
+    name: rarb
+    shell: /bin/bash
+    home: /home/rarb
+    create_home: yes
+    system: no
+
+- name: Create app directory
+  file:
+    path: /opt/rarb
+    state: directory
+    owner: rarb
+    group: rarb
+    mode: '0755'
+
+- name: Create data directory
+  file:
+    path: /home/rarb/.rarb
+    state: directory
+    owner: rarb
+    group: rarb
+    mode: '0755'
+
+- name: Add /opt/rarb to git safe directories
+  command: git config --global --add safe.directory /opt/rarb
+  changed_when: false
+
+- name: Check if repo already cloned
+  stat:
+    path: /opt/rarb/.git
+  register: git_exists
+
+- name: Clone rarb repository
+  command: git clone {{ rarb_repo }} /opt/rarb
+  when: not git_exists.stat.exists
+
+- name: Update rarb repository
+  command: git pull origin {{ rarb_branch }}
+  args:
+    chdir: /opt/rarb
+  when: git_exists.stat.exists
+  register: git_pull
+  changed_when: "'Already up to date' not in git_pull.stdout"
+  notify: Restart rarb
+
+- name: Set ownership of rarb directory
+  file:
+    path: /opt/rarb
+    state: directory
+    owner: rarb
+    group: rarb
+    recurse: yes
+
+- name: Create Python virtual environment
+  command: python3 -m venv /opt/rarb/venv
+  args:
+    creates: /opt/rarb/venv
+
+- name: Set ownership of venv
+  file:
+    path: /opt/rarb/venv
+    state: directory
+    owner: rarb
+    group: rarb
+    recurse: yes
+
+- name: Install rarb package
+  pip:
+    name: /opt/rarb
+    editable: yes
+    virtualenv: /opt/rarb/venv
+  notify: Restart rarb
+
+- name: Create .env file from template
+  template:
+    src: env.j2
+    dest: /opt/rarb/.env
+    owner: rarb
+    group: rarb
+    mode: '0600'
+  notify: Restart rarb
+
+- name: Create systemd service for rarb bot
+  template:
+    src: rarb-bot.service.j2
+    dest: /etc/systemd/system/rarb-bot.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart rarb
+
+- name: Create systemd service for rarb dashboard
+  template:
+    src: rarb-dashboard.service.j2
+    dest: /etc/systemd/system/rarb-dashboard.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart rarb-dashboard
+
+- name: Enable and start rarb services
+  systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: started
+  loop:
+    - rarb-bot
+    - rarb-dashboard
+
+# Caddy for HTTPS reverse proxy
+- name: Install Caddy prerequisites
+  apt:
+    name:
+      - debian-keyring
+      - debian-archive-keyring
+      - apt-transport-https
+      - curl
+    state: present
+
+- name: Add Caddy GPG key
+  shell: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+
+- name: Add Caddy repository
+  shell: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+  args:
+    creates: /etc/apt/sources.list.d/caddy-stable.list
+
+- name: Update apt cache for Caddy
+  apt:
+    update_cache: yes
+
+- name: Install Caddy
+  apt:
+    name: caddy
+    state: present
+
+- name: Deploy Caddyfile
+  template:
+    src: Caddyfile.j2
+    dest: /etc/caddy/Caddyfile
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload caddy
+
+- name: Enable and start Caddy
+  systemd:
+    name: caddy
+    enabled: yes
+    state: started
+
+- name: Open firewall for HTTP (Let's Encrypt)
+  ufw:
+    rule: allow
+    port: "80"
+    proto: tcp
+  ignore_errors: yes
+
+- name: Open firewall for HTTPS
+  ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+  ignore_errors: yes

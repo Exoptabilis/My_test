@@ -1,0 +1,19 @@
+---
+- name: Reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: Restart rarb
+  systemd:
+    name: rarb-bot
+    state: restarted
+
+- name: Restart rarb-dashboard
+  systemd:
+    name: rarb-dashboard
+    state: restarted
+
+- name: Reload caddy
+  systemd:
+    name: caddy
+    state: reloaded

@@ -1,0 +1,27 @@
+[Unit]
+Description=rarb Arbitrage Bot
+After=network.target
+
+[Service]
+Type=simple
+User=rarb
+Group=rarb
+WorkingDirectory=/opt/rarb
+EnvironmentFile=/opt/rarb/.env
+ExecStart=/opt/rarb/venv/bin/rarb run --live --realtime
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rarb-bot
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rarb/.rarb
+
+[Install]
+WantedBy=multi-user.target

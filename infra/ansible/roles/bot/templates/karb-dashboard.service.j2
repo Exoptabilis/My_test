@@ -1,0 +1,26 @@
+[Unit]
+Description=rarb Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=rarb
+Group=rarb
+WorkingDirectory=/opt/rarb
+EnvironmentFile=/opt/rarb/.env
+ExecStart=/opt/rarb/venv/bin/rarb dashboard --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rarb-dashboard
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rarb/.rarb
+
+[Install]
+WantedBy=multi-user.target
